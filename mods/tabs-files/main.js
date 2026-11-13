@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
-import { spaces, panes, run, openOverlay, theme, window, layout, settings, readTextFile, exec } from "herdr";
+import { spaces, panes, terminals, run, openOverlay, theme, window, layout, settings, readTextFile, exec } from "herdr";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -27,15 +27,21 @@ export default class Tabs extends View {
       ?? space?.folder;
   }
 
-  isLazygit(pane) {
-    const value = `${pane?.program?.key ?? ""} ${pane?.program?.name ?? ""} ${pane?.title ?? ""}`;
+  isLazygit(pane, terminal) {
+    const argv = Array.isArray(terminal?.argv) ? terminal.argv.join(" ") : `${terminal?.argv ?? ""}`;
+    const value = `${pane?.program?.key ?? ""} ${pane?.program?.name ?? ""} ${pane?.title ?? ""} ${terminal?.name ?? ""} ${argv}`;
     return /(^|\b)lazygit(\b|$)/i.test(value);
   }
 
   openLazygit() {
     const space = spaces().find(p => p.active), tab = space?.tabs.find(t => t.active), cwd = this.currentFolder(space, tab);
     if (!space || !tab || !cwd) return;
-    const existing = panes().find(p => p.terminal && p.cwd === cwd && this.isLazygit(p));
+    const allTerminals = terminals();
+    const existing = panes().find(p => {
+      if (!p.terminal || p.cwd !== cwd) return false;
+      const terminal = allTerminals.find(t => t.address === p.terminal || t.id === p.terminal || t.terminal === p.terminal);
+      return this.isLazygit(p, terminal);
+    });
     if (existing) {
       run("pane.focus", { terminal: existing.terminal });
       return;
