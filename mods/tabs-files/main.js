@@ -48,15 +48,15 @@ export default class Tabs extends View {
     }
     const token = `herdr-lazygit-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     this.lazygitJobs.push({
-      space: space.id,
-      tabs: new Set(space.tabs.map(t => t.id)),
+      tab: tab.id,
+      panes: new Set(panes().filter(p => p.tab === tab.id).map(p => p.pane)),
       marker: `/tmp/${token}`,
       on: space.machine
     });
     run("terminal.open", {
       argv: ["sh", "-lc", "lazygit; printf x > \"$1\"", "lazygit", `/tmp/${token}`],
       folder: cwd,
-      place: "tab",
+      place: "right",
       name: "lazygit"
     });
   }
@@ -67,18 +67,17 @@ export default class Tabs extends View {
     cx.spawn(async cx => {
       try {
         for (const job of [...this.lazygitJobs]) {
-          if (!job.tab) {
-            const space = spaces().find(s => s.id === job.space);
-            const tab = space?.tabs.find(t => !job.tabs.has(t.id));
-            if (tab) job.tab = tab.id;
+          if (!job.pane) {
+            const pane = panes().find(p => p.tab === job.tab && !job.panes.has(p.pane));
+            if (pane) job.pane = pane.pane;
           }
-          if (!job.tab) continue;
+          if (!job.pane) continue;
           let marker;
           try { marker = await readTextFile(job.marker, { on: job.on }); }
           catch { continue; }
           if (marker === null) continue;
           this.lazygitJobs = this.lazygitJobs.filter(j => j !== job);
-          run("tab.close", { id: job.tab, confirmed: true });
+          if (panes().some(p => p.pane === job.pane)) run("pane.close", { pane: job.pane });
           exec("rm", [job.marker], { on: job.on }).catch(() => {});
         }
       } finally {
