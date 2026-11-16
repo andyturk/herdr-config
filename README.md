@@ -7,6 +7,11 @@ Personal Herdr GUI customizations for transferring between machines.
 - `layouts/andys-layout.json` — personal layout based on Herdr's `main` layout.
   It uses the custom tabs and Files mods below and omits the built-in Changes
   pane.
+- `mods/pane-id/` — cloned pane header with the short terminal ID shown directly
+  after the pane's working directory. Icons reference Herdr's originals.
+  The header JavaScript must remain local: Herdr's module loader rejects imports
+  outside the mod directory (including symlinks), and the built-in header has no
+  extension slot for the ID.
 - `mods/files-leaf/` — cloned Files panel. Clicking `.md` and `.markdown`
   files opens them in `leaf`; other files keep Herdr's normal preview.
   Leaf tabs close automatically when `leaf` exits.
