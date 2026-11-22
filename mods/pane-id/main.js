@@ -3,6 +3,8 @@ import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { panes, props, run, theme, home, layout } from "herdr";
 
+const FILE_TITLE_PREFIX = "files-viewer:";
+
 function paneFrame(node) {
   if (!node || node.hidden) return null;
   if (node.content?.tab && node.content.pane) return node.content.pane;
@@ -47,8 +49,9 @@ export default class Pane extends View {
     const t = theme();
     const p = this.me();
     if (!p) return div();
+    const filePath = p.title?.startsWith(FILE_TITLE_PREFIX) ? p.title.slice(FILE_TITLE_PREFIX.length) : null;
     const name = ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "shell";
-    const pic = icon(p.program, 14, t.dim);
+    const pic = filePath ? null : icon(p.program, 14, t.dim);
     const st = p.status;
     const pane = p.pane;
     const bottom = paneFrame(layout())?.header?.position === "bottom";
@@ -58,8 +61,11 @@ export default class Pane extends View {
       .on_hover((hovered, cx) => { this.hovered = hovered; cx.notify(); })
       .on_click(() => run("pane.focus", { pane }))
       .when(Boolean(pic), el => el.child(pic))
-      .child(div().flex_none().truncate().max_w(260).font_medium().text_color(t.foreground).child(name))
-      .child(div().max_w(420).min_w(0).truncate().text_color(t.dim).child(folder(p.cwd)))
+      .when(Boolean(filePath), el => el
+        .child(div().min_w(0).truncate().font_medium().text_color(t.foreground).child(filePath)))
+      .when(!filePath, el => el
+        .child(div().flex_none().truncate().max_w(260).font_medium().text_color(t.foreground).child(name))
+        .child(div().max_w(420).min_w(0).truncate().text_color(t.dim).child(folder(p.cwd))))
       .child(div().flex_none().text_color(t.dim).child(p.terminal?.split("/").pop() ?? pane))
       .child(div().flex_1().min_w(0))
       .when(st === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))

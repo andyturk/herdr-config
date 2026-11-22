@@ -1,7 +1,15 @@
 // A lazy file browser for the focused pane's folder, with bounded read-only previews.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, props, openOverlay, closeOverlay, checking } from "herdr";
+
+// First matching filename wins. Each argv entry is one argument; "{file}" is
+// replaced with the absolute path. Unmatched files use the in-pane preview.
+// closeOnExit closes the viewer tab when the program exits (requires sh).
+const FILE_VIEWERS = [
+  { match: /\.(md|markdown)$/i, argv: ["leaf", "{file}"], closeOnExit: true },
+  { match: /\.(c|h|cc|cpp|cxx|hh|hpp|hxx)$/i, argv: ["bat", "--paging=always", "--pager=less -R -c -~", "--style=numbers,changes", "--", "{file}"], closeOnExit: true },
+];
 
 function location() {
   const space = spaces().find(s => s.active), f = focused();
@@ -42,10 +50,17 @@ export default class Files extends View {
   init(_props, cx) {
     this.saved = new Map();
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
-    this.leafJobs = []; this.reaping = false;
+    const { overlay, preview } = props() ?? {};
+    if (overlay && preview) {
+      this.previewOverlay = overlay;
+      this.root = preview.root;
+      this.on = preview.on;
+      if (!checking()) this.show(preview.file, cx);
+      return;
+    }
+    if (checking()) return;
     this.refresh(cx);
     cx.timer.every(10000, cx => this.refresh(cx));
-    cx.timer.every(250, cx => this.reapLeafTabs(cx));
   }
 
   watch(root, cx) {
@@ -59,34 +74,7 @@ export default class Files extends View {
   }
 
   current(context) {
-    return this.context === context && key() === context.key;
-  }
-
-  reapLeafTabs(cx) {
-    if (this.reaping || !this.leafJobs.length) return;
-    this.reaping = true;
-    cx.spawn(async cx => {
-      try {
-        for (const job of [...this.leafJobs]) {
-          if (!job.tab) {
-            const space = spaces().find(s => s.id === job.space);
-            const tab = space?.tabs.find(t => !job.tabs.has(t.id));
-            if (tab) job.tab = tab.id;
-          }
-          if (!job.tab) continue;
-          let marker;
-          try { marker = await readTextFile(job.marker, { on: job.on }); }
-          catch { continue; }
-          if (marker === null) continue;
-          this.leafJobs = this.leafJobs.filter(j => j !== job);
-          run("tab.close", { id: job.tab, confirmed: true });
-          exec("rm", [job.marker], { on: job.on }).catch(() => {});
-        }
-      } finally {
-        this.reaping = false;
-        cx.notify();
-      }
-    });
+    return this.context === context && (Boolean(this.previewOverlay) || key() === context.key);
   }
 
   async loadFolder(path, context) {
@@ -176,33 +164,30 @@ export default class Files extends View {
     });
   }
 
+  openFile(path, name, cx) {
+    const viewer = FILE_VIEWERS.find(rule => name.search(rule.match) !== -1);
+    if (!viewer) return this.show(path, cx);
+    const file = `${this.root.replace(/\/+$/, "")}/${path}`;
+    let argv = viewer.argv.map(arg => arg === "{file}" ? file : arg);
+    if (viewer.closeOnExit) {
+      const title = file.replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
+      // terminal.open normally returns to a login shell after running argv.
+      // Replace that shell so Herdr closes the pane when the viewer exits.
+      const script = 'printf "\\033]2;files-viewer:%s\\007" "$1"; shift; exec "$@"';
+      argv = ["exec", "sh", "-c", script, "files-viewer", title, ...argv];
+    }
+    run("terminal.open", { argv, folder: this.root, place: "tab" });
+  }
+
   rows(prefix, depth, out, t) {
     if (out.length >= TOTAL || depth > 40) return out;
     for (const entry of this.entries.get(prefix) ?? []) {
       if (out.length >= TOTAL) break;
       const path = prefix ? `${prefix}/${entry.name}` : entry.name, open = this.folders.has(path), mark = this.marks[`${this.root}/${path}`];
       out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer().hover(s => s.bg(t.hover))
-        .on_click((_e, cx) => {
-          if (entry.dir) this.toggle(path, cx);
-          else if (/\.(md|markdown)$/i.test(path)) {
-            const space = spaces().find(s => s.active);
-            const token = `herdr-leaf-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-            this.leafJobs.push({
-              space: space?.id,
-              tabs: new Set(space?.tabs.map(t => t.id) ?? []),
-              marker: `/tmp/${token}`,
-              on: this.on
-            });
-            run("terminal.open", {
-              argv: ["sh", "-lc", "leaf \"$1\"; printf x > \"$2\"", "leaf", `${this.root}/${path}`, `/tmp/${token}`],
-              folder: this.root,
-              place: "tab"
-            });
-          }
-          else this.show(path, cx);
-        })
-        .child(entry.dir ? svg(`mods/files-leaf/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
-        .child(svg(`mods/files-leaf/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
+        .on_click((_e, cx) => entry.dir ? this.toggle(path, cx) : this.openFile(path, entry.name, cx))
+        .child(entry.dir ? svg(`mods/files-viewer/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
+        .child(svg(`mods/files-viewer/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
         .child(div().flex_1().min_w(0).truncate().child(entry.name))
         .when(Boolean(mark), el => el.child(div().text_size(11).text_color(mark === "A" ? t.ansi2 : mark === "D" || mark === "U" ? t.ansi1 : t.blocked).child(mark))));
       if (entry.dir && open) this.rows(path, depth + 1, out, t);
@@ -211,13 +196,24 @@ export default class Files extends View {
   }
 
   render(cx) {
-    if (key() !== this.context?.key) this.refresh(cx);
+    if (!this.previewOverlay && !checking() && key() !== this.context?.key) this.refresh(cx);
     const t = theme();
+    const expanded = Boolean(this.previewOverlay);
+    const label = expanded ? "Restore preview" : "Maximize preview";
     return v_flex().id("files").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
-        .when(Boolean(this.file), el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
+        .when(Boolean(this.file) && !expanded, el => el.child(div().id("files-back").w(20).cursor_pointer().text_color(t.muted).on_click((_e, cx) => { this.show(null); cx.notify(); }).child("←")))
         .child(div().font_semibold().child("Files"))
-        .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).child(this.file ?? this.root?.split(/[\\/]/).pop() ?? "")))
+        .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).child(this.file ?? this.root?.split(/[\\/]/).pop() ?? ""))
+        .when(expanded || Boolean(this.file), el => el.child(h_flex().id("files-preview-size").size(26).flex_none().items_center().justify_center().rounded(5)
+          .cursor_pointer().text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground))
+          .accessibility_label(label).tooltip(label)
+          .on_click(() => {
+            if (expanded) closeOverlay(this.previewOverlay);
+            else openOverlay({ mod: "files-viewer", kind: "dialog", width: 0.94, height: 0.92, frame: "none",
+              props: { preview: { root: this.root, on: this.on, file: this.file } } });
+          })
+          .child(svg(`mods/pane/${expanded ? "unzoom" : "zoom"}.svg`).size(14)))))
       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6).children(this.rows("", 0, [], t))
         .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
         .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))

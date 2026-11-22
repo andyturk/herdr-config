@@ -12,9 +12,15 @@ Personal Herdr GUI customizations for transferring between machines.
   The header JavaScript must remain local: Herdr's module loader rejects imports
   outside the mod directory (including symlinks), and the built-in header has no
   extension slot for the ID.
-- `mods/files-leaf/` — cloned Files panel. Clicking `.md` and `.markdown`
-  files opens them in `leaf`; other files keep Herdr's normal preview.
-  Leaf tabs close automatically when `leaf` exits.
+- `mods/files-viewer/` — cloned Files panel. Markdown opens in `leaf`, C/C++
+  source and headers open in `bat`, and other files use Herdr's read-only preview.
+  Edit `FILE_VIEWERS` at the top of `mods/files-viewer/main.js` to change the rules:
+  the first filename regex that matches wins, and the `"{file}"` argument is
+  replaced with the absolute path. Viewers open in a new tab. Both `leaf` and
+  `bat` use `closeOnExit` to close their tabs when they exit and show the
+  full file path followed by the short terminal ID in the pane header, without
+  a separate working directory or icon. `bat` uses `less` to start short files
+  at the top.
 - `mods/tabs-files/` — cloned tab bar. It removes the Changes button and adds
   a Lazygit button with a Git-style icon. Lazygit opens in the focused
   directory, focuses an existing Lazygit terminal for that directory, and
@@ -31,8 +37,22 @@ directory structure (normally `~/.config/herdr-app`):
 cp -R layouts mods themes ~/.config/herdr-app/
 ```
 
-Then select `andys-layout` in Herdr. The `leaf` and `lazygit` commands must be
-available on each machine where they are used.
+Then select `andys-layout` in Herdr. The `leaf`, `bat`, and `lazygit` commands
+must be available on each machine where they are used.
 
 Machine-specific state such as `settings.json`, `shared.json`, `view.json`,
 window state, keys, and layout state is intentionally not included.
+
+### Yazi shortcuts (optional)
+
+The `herdr-yazi` plugin targets the older Herdr TUI. Herdr.app can launch Yazi
+from the focused pane's working directory without a plugin. With `yazi`
+installed on the machine running the terminal, merge these entries into
+`global` in `~/.config/herdr-app/keys.json`:
+
+```json
+{
+  "cmd-y": { "command": "terminal.open", "args": { "argv": ["yazi"], "place": "right", "name": "Yazi" } },
+  "cmd-shift-y": { "command": "terminal.open", "args": { "argv": ["yazi"], "place": "tab", "name": "Yazi" } }
+}
+```
