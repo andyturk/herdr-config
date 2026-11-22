@@ -12,15 +12,14 @@ Personal Herdr GUI customizations for transferring between machines.
   The header JavaScript must remain local: Herdr's module loader rejects imports
   outside the mod directory (including symlinks), and the built-in header has no
   extension slot for the ID.
-- `mods/files-viewer/` — cloned Files panel. Markdown opens in `leaf`, C/C++
-  source and headers open in `bat`, and other files use Herdr's read-only preview.
-  Edit `FILE_VIEWERS` at the top of `mods/files-viewer/main.js` to change the rules:
-  the first filename regex that matches wins, and the `"{file}"` argument is
-  replaced with the absolute path. Viewers open in a new tab. Both `leaf` and
-  `bat` use `closeOnExit` to close their tabs when they exit and show the
-  full file path followed by the short terminal ID in the pane header, without
-  a separate working directory or icon. `bat` uses `less` to start short files
-  at the top.
+- `mods/files-viewer/` — cloned Files panel. Markdown opens in `leaf`; other
+  files open in `bat`. For extensionless files, the panel checks the first
+  16 KiB for C++ syntax and header conventions. If it finds a match, it asks
+  `bat` for C++ highlighting; otherwise `bat` uses its normal detection.
+  Right-click a file to use Herdr's read-only preview instead. The `leaf`
+  and `bat` tabs close when their viewers exit and show the full file path
+  followed by the short terminal ID, without a separate working directory or
+  icon. `bat` uses `less` to start short files at the top.
 - `mods/tabs-files/` — cloned tab bar. It removes the Changes button and adds
   a Lazygit button with a Git-style icon. Lazygit opens in the focused
   directory, focuses an existing Lazygit terminal for that directory, and

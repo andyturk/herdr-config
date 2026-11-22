@@ -3,13 +3,20 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, props, openOverlay, closeOverlay, checking } from "herdr";
 
-// First matching filename wins. Each argv entry is one argument; "{file}" is
-// replaced with the absolute path. Unmatched files use the in-pane preview.
-// closeOnExit closes the viewer tab when the program exits (requires sh).
-const FILE_VIEWERS = [
-  { match: /\.(md|markdown)$/i, argv: ["leaf", "{file}"], closeOnExit: true },
-  { match: /\.(c|h|cc|cpp|cxx|hh|hpp|hxx)$/i, argv: ["bat", "--paging=always", "--pager=less -R -c -~", "--style=numbers,changes", "--", "{file}"], closeOnExit: true },
-];
+const MARKDOWN = /\.(md|mdown|markdown|markdn|mkd)$/i;
+const BAT = ["bat", "--paging=always", "--pager=less -R -c -~", "--style=numbers,changes"];
+
+function looksLikeCpp(text) {
+  text = text.replace(/^\uFEFF/, "");
+  if (text.startsWith("#!") || text.includes("\0")) return false;
+  // Use source clues, not filenames. Header guards also cover C-style C++ headers.
+  return /^[ \t]*#[ \t]*(?:pragma[ \t]+once\b|include[ \t]*<[A-Za-z_]\w*>)/m.test(text)
+    || /^[ \t]*#[ \t]*ifndef[ \t]+([A-Za-z_]\w*)[ \t]*\r?\n[ \t]*#[ \t]*define[ \t]+\1\b/m.test(text)
+    || /^[ \t]*(?:export[ \t]+)?(?:template\s*<|(?:inline[ \t]+)?namespace(?:[ \t]+[\w:]+)?\s*\{|module[ \t]+[\w.:]+[ \t]*;)/m.test(text)
+    || /^[ \t]*(?:(?:inline|static|export)[ \t]+)*(?:constexpr|consteval|constinit|concept)\b/m.test(text)
+    || /^[ \t]*(?:class|struct)[ \t]+[A-Za-z_]\w*(?:[ \t]+final)?\s*(?:\{|;|:[ \t]*(?:public|protected|private)\b)/m.test(text)
+    || /\bstd::[A-Za-z_]/.test(text);
+}
 
 function location() {
   const space = spaces().find(s => s.active), f = focused();
@@ -165,18 +172,26 @@ export default class Files extends View {
   }
 
   openFile(path, name, cx) {
-    const viewer = FILE_VIEWERS.find(rule => name.search(rule.match) !== -1);
-    if (!viewer) return this.show(path, cx);
-    const file = `${this.root.replace(/\/+$/, "")}/${path}`;
-    let argv = viewer.argv.map(arg => arg === "{file}" ? file : arg);
-    if (viewer.closeOnExit) {
+    const { cwd: folder, on } = this.context;
+    const file = `${folder.replace(/\/+$/, "")}/${path}`;
+    const open = argv => {
       const title = file.replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
       // terminal.open normally returns to a login shell after running argv.
       // Replace that shell so Herdr closes the pane when the viewer exits.
       const script = 'printf "\\033]2;files-viewer:%s\\007" "$1"; shift; exec "$@"';
-      argv = ["exec", "sh", "-c", script, "files-viewer", title, ...argv];
-    }
-    run("terminal.open", { argv, folder: this.root, place: "tab" });
+      run("terminal.open", { argv: ["exec", "sh", "-c", script, "files-viewer", title, ...argv], folder, place: "tab" });
+    };
+    if (MARKDOWN.test(name)) return open(["leaf", file]);
+    const openBat = cpp => open([...BAT, ...(cpp ? ["--language=C++"] : []), "--", file]);
+    if (name.includes(".")) return openBat(false);
+
+    // Sniff a bounded prefix only for extensionless names, on the file's machine.
+    // Leave other files, including any failed reads, to bat's usual detection.
+    const context = this.context;
+    cx.spawn(async () => {
+      const result = await exec("sh", ["-c", '[ -f "$1" ] && head -c 16384 "$1"', "files-viewer", file], { on, timeout: 3000 }).catch(() => null);
+      if (this.current(context)) openBat(result?.code === 0 && looksLikeCpp(result.stdout));
+    });
   }
 
   rows(prefix, depth, out, t) {
@@ -186,6 +201,7 @@ export default class Files extends View {
       const path = prefix ? `${prefix}/${entry.name}` : entry.name, open = this.folders.has(path), mark = this.marks[`${this.root}/${path}`];
       out.push(h_flex().id(`file-${path}`).h(28).flex_none().pl(8 + depth * 18).pr(8).gap(7).items_center().rounded(7).cursor_pointer().hover(s => s.bg(t.hover))
         .on_click((_e, cx) => entry.dir ? this.toggle(path, cx) : this.openFile(path, entry.name, cx))
+        .when(!entry.dir, el => el.on_mouse_down("right", (_e, cx) => this.show(path, cx)))
         .child(entry.dir ? svg(`mods/files-viewer/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.dim) : div().w(12).flex_none())
         .child(svg(`mods/files-viewer/${entry.dir ? "folder" : "file"}.svg`).size(14).flex_none().text_color(t.muted))
         .child(div().flex_1().min_w(0).truncate().child(entry.name))
