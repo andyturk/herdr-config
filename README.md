@@ -23,6 +23,8 @@ Personal Herdr GUI customizations for transferring between machines.
   `BAT_THEME`); `ov` handles line numbers and wraps
   long lines when the pane resizes. Press `r` to reread and re-highlight in
   the same tab, `?` for help, or `q` to close. Backward search uses `Alt+/`.
+  Expanded subfolders are remembered per working directory and machine,
+  including across Herdr restarts.
 - `mods/tabs-files/` — cloned tab bar. It removes the Changes button and adds
   a Lazygit button with a Git-style icon. Lazygit opens in the focused
   directory, focuses an existing Lazygit terminal for that directory, and

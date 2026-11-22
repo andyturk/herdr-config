@@ -1,7 +1,7 @@
 // A lazy file browser for the focused pane's folder, with bounded read-only previews.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, props, openOverlay, closeOverlay, checking } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, props, openOverlay, closeOverlay, checking, shared, setShared } from "herdr";
 
 const MARKDOWN = /\.(md|mdown|markdown|markdn|mkd)$/i;
 // bat only highlights; ov owns line numbering, wrapping, and reloading.
@@ -41,6 +41,9 @@ function location() {
 const key = () => JSON.stringify(location());
 const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };
 const PER_FOLDER = 500, TOTAL = 5000;
+const OPEN_FOLDERS = "files-viewer.open-folders", SAVED_ROOTS = 100;
+const folderKey = ({ cwd, on }) => JSON.stringify([on, cwd]);
+const openFolders = () => new Map(shared(OPEN_FOLDERS) ?? []);
 
 async function directory(path, on) {
   const windowsDirectory = async () => {
@@ -69,7 +72,7 @@ async function directory(path, on) {
 
 export default class Files extends View {
   init(_props, cx) {
-    this.saved = new Map();
+    this.previews = new Map();
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
     const { overlay, preview } = props() ?? {};
     if (overlay && preview) {
@@ -110,12 +113,13 @@ export default class Files extends View {
   refresh(cx) {
     const { cwd, on } = location(), next = key();
     if (next !== this.context?.key) {
-      if (this.context) this.saved.set(this.context.key, { folders: this.folders, file: this.file });
-      const saved = this.saved.get(next);
-      this.context = { key: next, cwd, on }; this.root = cwd; this.on = on; this.entries = new Map(); this.folders = new Set(saved?.folders);
+      if (this.context) this.previews.set(this.context.key, this.file);
+      this.context = { key: next, cwd, on }; this.root = cwd; this.on = on; this.entries = new Map();
+      this.folders = new Set(cwd ? openFolders().get(folderKey(this.context)) : undefined);
       this.pending = new Set(); this.marks = {}; this.show(null); this.watched = null; this.error = null; this.limited = false;
       this.loading = false;
-      if (saved?.file) this.show(saved.file, cx);
+      const preview = this.previews.get(next);
+      if (preview) this.show(preview, cx);
     }
     if (!cwd || this.loading) return;
     const context = this.context;
@@ -123,9 +127,15 @@ export default class Files extends View {
     this.limited = false;
     cx.spawn(async cx => {
       try {
-        for (const path of ["", ...this.folders]) {
+        await this.loadFolder("", context);
+        for (const path of this.folders) {
           if (!this.current(context)) return;
-          await this.loadFolder(path, context);
+          // Skip remembered folders that no longer appear in the parent listing.
+          const slash = path.lastIndexOf("/");
+          const parent = slash < 0 ? "" : path.slice(0, slash), name = path.slice(slash + 1);
+          if (this.entries.get(parent)?.some(entry => entry.dir && entry.name === name)) {
+            await this.loadFolder(path, context);
+          }
         }
         const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on }).catch(() => null);
         const marks = {};
@@ -162,6 +172,10 @@ export default class Files extends View {
         });
       }
     }
+    const saved = openFolders(), root = folderKey(this.context);
+    saved.delete(root);
+    if (this.folders.size) saved.set(root, [...this.folders]);
+    setShared(OPEN_FOLDERS, [...saved].slice(-SAVED_ROOTS));
     cx.notify();
   }
 
