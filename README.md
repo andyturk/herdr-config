@@ -19,8 +19,10 @@ Personal Herdr GUI customizations for transferring between machines.
   Right-click a file to use Herdr's read-only preview instead. The `leaf`
   and `bat` tabs close when their viewers exit and show the full file path
   followed by the short terminal ID, without a separate working directory or
-  icon. `bat` uses `less` to start short files at the top and rewrap long
-  lines when the pane resizes.
+  icon. `bat` highlights in Solarized Dark by default (override with
+  `BAT_THEME`); `ov` handles line numbers and wraps
+  long lines when the pane resizes. Press `r` to reread and re-highlight in
+  the same tab, `?` for help, or `q` to close. Backward search uses `Alt+/`.
 - `mods/tabs-files/` — cloned tab bar. It removes the Changes button and adds
   a Lazygit button with a Git-style icon. Lazygit opens in the focused
   directory, focuses an existing Lazygit terminal for that directory, and
@@ -37,8 +39,8 @@ directory structure (normally `~/.config/herdr-app`):
 cp -R layouts mods themes ~/.config/herdr-app/
 ```
 
-Then select `andys-layout` in Herdr. The `leaf`, `bat`, and `lazygit` commands
-must be available on each machine where they are used.
+Then select `andys-layout` in Herdr. The `leaf`, `bat`, `ov`, and `lazygit`
+commands must be available on each machine where they are used.
 
 Machine-specific state such as `settings.json`, `shared.json`, `view.json`,
 window state, keys, and layout state is intentionally not included.

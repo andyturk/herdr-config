@@ -4,8 +4,21 @@ import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, props, openOverlay, closeOverlay, checking } from "herdr";
 
 const MARKDOWN = /\.(md|mdown|markdown|markdn|mkd)$/i;
-// Send whole lines to less so it can rewrap them when the pane resizes.
-const BAT = ["bat", "--paging=always", "--wrap=never", "--pager=less -R -c -~ -+S", "--style=numbers,changes"];
+// bat only highlights; ov owns line numbering, wrapping, and reloading.
+const BAT_ARGS = ["--paging=never", "--wrap=never", "--color=always", "--style=plain"];
+// Create the viewer config on the terminal's machine, including remote spaces.
+const OV_VIEWER = `
+  dir=$(mktemp -d "\${TMPDIR:-/tmp}/herdr-ov.XXXXXXXX") || exit 1
+  config=$dir/config.yaml
+  trap 'rm -f -- "$config"; rmdir -- "$dir"' EXIT
+  trap 'exit 1' HUP INT TERM
+  printf '%s\\n' 'KeyBind:' '  help: ["h", "?"]' '  backsearch: ["alt+/"]' '  reload: ["r", "F5"]' > "$config" || exit 1
+  # Skip ov's terminal probes and bat's color query inside ov's child PTY.
+  # Strip CR from bat's line endings before the child PTY adds its own.
+  TCELL_NEGOTIATE=disable BAT_THEME="\${BAT_THEME:-Solarized (dark)}" \\
+    ov --config "$config" --line-number --wrap=char --status-line=false --exec -- \\
+    sh -c 'bat "$@" | sed "s/$(printf "\\r")$//"' bat "$@"
+`;
 
 function looksLikeCpp(text) {
   text = text.replace(/^\uFEFF/, "");
@@ -175,18 +188,18 @@ export default class Files extends View {
   openFile(path, name, cx) {
     const { cwd: folder, on } = this.context;
     const file = `${folder.replace(/\/+$/, "")}/${path}`;
-    const open = argv => {
+    const open = (argv, name = argv[0]) => {
       const title = file.replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
       // terminal.open normally returns to a login shell after running argv.
       // Replace that shell so Herdr closes the pane when the viewer exits.
       const script = 'printf "\\033]2;files-viewer:%s\\007" "$1"; shift; exec "$@"';
       run("terminal.open", {
         argv: ["exec", "sh", "-c", script, "files-viewer", title, ...argv],
-        folder, place: "tab", name: argv[0],
+        folder, place: "tab", name,
       });
     };
     if (MARKDOWN.test(name)) return open(["leaf", file]);
-    const openBat = cpp => open([...BAT, ...(cpp ? ["--language=C++"] : []), "--", file]);
+    const openBat = cpp => open(["sh", "-c", OV_VIEWER, "ov", ...BAT_ARGS, ...(cpp ? ["--language=C++"] : []), "--", file], "bat");
     if (name.includes(".")) return openBat(false);
 
     // Sniff a bounded prefix only for extensionless names, on the file's machine.
