@@ -4,7 +4,8 @@ import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, props, openOverlay, closeOverlay, checking } from "herdr";
 
 const MARKDOWN = /\.(md|mdown|markdown|markdn|mkd)$/i;
-const BAT = ["bat", "--paging=always", "--pager=less -R -c -~", "--style=numbers,changes"];
+// Send whole lines to less so it can rewrap them when the pane resizes.
+const BAT = ["bat", "--paging=always", "--wrap=never", "--pager=less -R -c -~ -+S", "--style=numbers,changes"];
 
 function looksLikeCpp(text) {
   text = text.replace(/^\uFEFF/, "");
@@ -179,7 +180,10 @@ export default class Files extends View {
       // terminal.open normally returns to a login shell after running argv.
       // Replace that shell so Herdr closes the pane when the viewer exits.
       const script = 'printf "\\033]2;files-viewer:%s\\007" "$1"; shift; exec "$@"';
-      run("terminal.open", { argv: ["exec", "sh", "-c", script, "files-viewer", title, ...argv], folder, place: "tab" });
+      run("terminal.open", {
+        argv: ["exec", "sh", "-c", script, "files-viewer", title, ...argv],
+        folder, place: "tab", name: argv[0],
+      });
     };
     if (MARKDOWN.test(name)) return open(["leaf", file]);
     const openBat = cpp => open([...BAT, ...(cpp ? ["--language=C++"] : []), "--", file]);

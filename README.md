@@ -19,7 +19,8 @@ Personal Herdr GUI customizations for transferring between machines.
   Right-click a file to use Herdr's read-only preview instead. The `leaf`
   and `bat` tabs close when their viewers exit and show the full file path
   followed by the short terminal ID, without a separate working directory or
-  icon. `bat` uses `less` to start short files at the top.
+  icon. `bat` uses `less` to start short files at the top and rewrap long
+  lines when the pane resizes.
 - `mods/tabs-files/` — cloned tab bar. It removes the Changes button and adds
   a Lazygit button with a Git-style icon. Lazygit opens in the focused
   directory, focuses an existing Lazygit terminal for that directory, and
