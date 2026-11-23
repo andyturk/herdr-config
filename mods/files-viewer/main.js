@@ -3,7 +3,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, run, props, openOverlay, closeOverlay, checking, shared, setShared } from "herdr";
 
-const MARKDOWN = /\.(md|mdown|markdown|markdn|mkd)$/i;
+const MARKDOWN = /\.(md|mdc|mdown|markdown|markdn|mkd)$/i;
 // bat only highlights; ov owns line numbering, wrapping, and reloading.
 const BAT_ARGS = ["--paging=never", "--wrap=never", "--color=always", "--style=plain"];
 // Create the viewer config on the terminal's machine, including remote spaces.
